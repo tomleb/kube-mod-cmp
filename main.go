@@ -37,10 +37,11 @@ func parseIgnoreFile(path string, ignored map[string]struct{}) error {
 	return nil
 }
 
-func localDependencies() (dependencies, error) {
+func localDependencies(dir string) (dependencies, error) {
 	deps := dependencies{}
 
 	cmd := exec.Command("go", "list", "-m", "all")
+	cmd.Dir = dir
 	data, err := cmd.CombinedOutput()
 	if err != nil {
 		return deps, err
@@ -135,12 +136,43 @@ func writeJSON(output string, v any) error {
 	return nil
 }
 
+func getK8sVersion(version string, localDependencies dependencies) (string, error) {
+	if version != "auto" {
+		return version, nil
+	}
+
+	// One of these should be in the go.mod
+	packages := []string{
+		"k8s.io/api",
+		"k8s.io/apimachinery",
+		"k8s.io/client-go",
+	}
+	for _, pkg := range packages {
+		if k8sVersion, exists := localDependencies[pkg]; exists {
+			// Convert from v0.X.Y to v1.X.Y because libraries are
+			// v0 based
+			return strings.Replace(k8sVersion, "v0", "v1", 1), nil
+		}
+	}
+
+	return "", fmt.Errorf("couldn't detect k8s version")
+}
+
 func updateRenovate() cli.Command {
 	return cli.Command{
-		Name:  "update-renovate",
-		Usage: "Update the renovate config with pinned dependencies from k8s upstream",
+		Name:      "update-renovate",
+		Usage:     "Update the renovate config with pinned dependencies from k8s upstream",
+		ArgsUsage: "[directory]",
 		Action: func(ctx *cli.Context) error {
-			k8sVersion := ctx.String("k8s-version")
+			local, err := localDependencies(ctx.Args().First())
+			if err != nil {
+				return err
+			}
+			k8sVersion, err := getK8sVersion(ctx.String("k8s-version"), local)
+			if err != nil {
+				return err
+			}
+
 			k8s, err := k8sDependencies(k8sVersion)
 			if err != nil {
 				return err
@@ -214,9 +246,9 @@ func updateRenovate() cli.Command {
 		},
 		Flags: []cli.Flag{
 			cli.StringFlag{
-				Name:     "k8s-version",
-				Usage:    "The k8s version to look for",
-				Required: true,
+				Name:  "k8s-version",
+				Usage: "The k8s version to look for",
+				Value: "auto",
 			},
 			cli.StringFlag{
 				Name:  "ignore-file",
@@ -237,11 +269,15 @@ func updateRenovate() cli.Command {
 
 func checkCmd() cli.Command {
 	return cli.Command{
-		Name:  "check",
-		Usage: "Check that dependencies from upstream k8s are pinned to the correct version",
+		Name:      "check",
+		Usage:     "Check that dependencies from upstream k8s are pinned to the correct version",
+		ArgsUsage: "[directory]",
 		Action: func(ctx *cli.Context) error {
-			k8sVersion := ctx.String("k8s-version")
-			local, err := localDependencies()
+			local, err := localDependencies(ctx.Args().First())
+			if err != nil {
+				return err
+			}
+			k8sVersion, err := getK8sVersion(ctx.String("k8s-version"), local)
 			if err != nil {
 				return err
 			}
@@ -285,9 +321,9 @@ func checkCmd() cli.Command {
 		},
 		Flags: []cli.Flag{
 			cli.StringFlag{
-				Name:     "k8s-version",
-				Usage:    "The k8s version to look for",
-				Required: true,
+				Name:  "k8s-version",
+				Usage: "The k8s version to look for",
+				Value: "auto",
 			},
 			cli.StringFlag{
 				Name:  "ignore-file",
