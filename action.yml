@@ -1,0 +1,12 @@
+name: 'Kube Mod Cmp'
+description: "Compares go.mod version with kubernetes' go.mod"
+inputs:
+  action:
+    description: 'What to do'
+    required: true
+    default: 'check'
+  ignore-file:
+    description: 'Path to ignore-file'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
