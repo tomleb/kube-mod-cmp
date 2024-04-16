@@ -1,4 +1,4 @@
-FROM docker.io/golang:1.22 as builder
+FROM docker.io/golang:1.22
 
 WORKDIR /usr/src/app
 
@@ -8,10 +8,4 @@ RUN go mod download && go mod verify
 
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -v -o /usr/local/bin/kube-mod-cmp ./...
-
-FROM alpine:3.19
-
-COPY entrypoint.sh /entrypoint.sh
-COPY --from=builder /usr/local/bin/kube-mod-cmp /usr/local/bin/kube-mod-cmp
-
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
