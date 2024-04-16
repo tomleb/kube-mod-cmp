@@ -150,7 +150,7 @@ func updateRenovate() cli.Command {
 			ignoreFile := ctx.String("ignore-file")
 			if ignoreFile != "" {
 				if err = parseIgnoreFile(ignoreFile, ignored); err != nil {
-					return err
+					return fmt.Errorf("parsing ignore-file: %w", err)
 				}
 			}
 
@@ -253,8 +253,8 @@ func checkCmd() cli.Command {
 			ignored := make(map[string]struct{})
 			ignoreFile := ctx.String("ignore-file")
 			if ignoreFile != "" {
-				if err := parseIgnoreFile(ignoreFile, ignored); err != nil {
-					return err
+				if err = parseIgnoreFile(ignoreFile, ignored); err != nil {
+					return fmt.Errorf("parsing ignore-file: %w", err)
 				}
 			}
 

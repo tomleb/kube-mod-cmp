@@ -5,8 +5,10 @@ inputs:
     description: 'What to do'
     required: true
     default: 'check'
-  ignore-file:
+  ignore_file:
     description: 'Path to ignore-file'
+  k8s_version:
+    description: 'Kubernetes library version'
 runs:
   using: 'docker'
   image: 'Dockerfile'
