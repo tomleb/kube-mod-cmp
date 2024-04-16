@@ -1,0 +1,15 @@
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: 'rancher/lasso'
+      - name: Compare kubernetes upstream go.mod
+        uses: tomleb/kube-mod-cmp@e277643b4f63b9d2141d1c07482d95df699e7827
+        with:
+          action: 'check'
+          k8s_version: 'v1.28.6'
