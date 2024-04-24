@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -17,7 +18,27 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
+type goModInfo struct {
+	GoVersion string
+	Deps      dependencies
+}
+
+// key=module path, value=version
 type dependencies map[string]string
+
+func parseGoMod(r io.Reader) (*modfile.File, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
 
 func parseIgnoreFile(path string, ignored map[string]struct{}) error {
 	file, err := os.Open(path)
@@ -37,14 +58,34 @@ func parseIgnoreFile(path string, ignored map[string]struct{}) error {
 	return nil
 }
 
-func localDependencies(dir string) (dependencies, error) {
-	deps := dependencies{}
+func localDependencies(dir string) (goModInfo, error) {
+	info := goModInfo{
+		Deps: dependencies{},
+	}
+
+	goModFile, err := os.Open(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return info, err
+	}
+	defer goModFile.Close()
+
+	f, err := parseGoMod(goModFile)
+	if err != nil {
+		return info, err
+	}
+
+	info.GoVersion = f.Go.Version
 
 	cmd := exec.Command("go", "list", "-m", "all")
 	cmd.Dir = dir
 	data, err := cmd.CombinedOutput()
 	if err != nil {
-		return deps, err
+		return info, err
+	}
+
+	deps := make(map[string]struct{})
+	for _, required := range f.Require {
+		deps[required.Mod.Path] = struct{}{}
 	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(data))
@@ -54,28 +95,37 @@ func localDependencies(dir string) (dependencies, error) {
 		if len(fields) != 2 {
 			continue
 		}
-		deps[fields[0]] = fields[1]
+		// Ignore dependencies that are not in the go.mod. This can
+		// happen for indirect deps of indirect deps. Since these don't
+		// appear in the Go mod, there's little we can do to pin to a
+		// correct version
+		module, version := fields[0], fields[1]
+		if _, found := deps[module]; !found {
+			continue
+		}
+
+		info.Deps[module] = version
 	}
-	return deps, nil
+
+	return info, nil
 }
 
-func k8sDependencies(version string) (dependencies, error) {
-	deps := dependencies{}
+func k8sDependencies(version string) (goModInfo, error) {
+	info := goModInfo{
+		Deps: dependencies{},
+	}
 	resp, err := http.Get(fmt.Sprintf("https://raw.githubusercontent.com/kubernetes/kubernetes/%s/go.mod", version))
 	if err != nil {
-		return deps, err
+		return info, err
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	f, err := parseGoMod(resp.Body)
 	if err != nil {
-		return deps, err
+		return info, err
 	}
 
-	f, err := modfile.Parse("go.mod", data, nil)
-	if err != nil {
-		return deps, err
-	}
+	info.GoVersion = f.Go.Version
 
 	// Kubernetes's go.mod contains a bunch of replace that targets local
 	// path. We want to skip those.
@@ -104,10 +154,10 @@ func k8sDependencies(version string) (dependencies, error) {
 			continue
 		}
 
-		deps[required.Mod.Path] = required.Mod.Version
+		info.Deps[required.Mod.Path] = required.Mod.Version
 	}
 
-	return deps, nil
+	return info, nil
 }
 
 type renovateConfig struct {
@@ -136,7 +186,7 @@ func writeJSON(output string, v any) error {
 	return nil
 }
 
-func getK8sVersion(version string, localDependencies dependencies) (string, error) {
+func getK8sVersion(version string, info goModInfo) (string, error) {
 	if version != "auto" {
 		return version, nil
 	}
@@ -148,7 +198,7 @@ func getK8sVersion(version string, localDependencies dependencies) (string, erro
 		"k8s.io/client-go",
 	}
 	for _, pkg := range packages {
-		if k8sVersion, exists := localDependencies[pkg]; exists {
+		if k8sVersion, exists := info.Deps[pkg]; exists {
 			// Convert from v0.X.Y to v1.X.Y because libraries are
 			// v0 based
 			return strings.Replace(k8sVersion, "v0", "v1", 1), nil
@@ -190,7 +240,7 @@ func updateRenovate() cli.Command {
 				PackageRules: make([]packageRule, 0),
 			}
 
-			for pkg, ver := range k8s {
+			for pkg, ver := range k8s.Deps {
 				_, isIgnored := ignored[pkg]
 				if isIgnored {
 					continue
@@ -270,7 +320,7 @@ func updateRenovate() cli.Command {
 func checkCmd() cli.Command {
 	return cli.Command{
 		Name:      "check",
-		Usage:     "Check that dependencies from upstream k8s are pinned to the correct version",
+		Usage:     "Check that dependencies and Go version from upstream k8s are pinned to the correct version",
 		ArgsUsage: "[directory]",
 		Action: func(ctx *cli.Context) error {
 			local, err := localDependencies(ctx.Args().First())
@@ -286,6 +336,12 @@ func checkCmd() cli.Command {
 				return err
 			}
 
+			hasError := false
+
+			if local.GoVersion != k8s.GoVersion {
+				log.Printf("Go version is different, local=%s vs upstream=%s\n", local.GoVersion, k8s.GoVersion)
+			}
+
 			ignored := make(map[string]struct{})
 			ignoreFile := ctx.String("ignore-file")
 			if ignoreFile != "" {
@@ -294,10 +350,8 @@ func checkCmd() cli.Command {
 				}
 			}
 
-			hasError := false
-
-			for kpkg, kver := range k8s {
-				lver, exists := local[kpkg]
+			for kpkg, kver := range k8s.Deps {
+				lver, exists := local.Deps[kpkg]
 				if !exists {
 					continue
 				}
