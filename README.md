@@ -18,13 +18,13 @@ $ kubemodcmp check path/to/repo
 
 ## ✨ Features
 
-- Enforce versions of dependencies in `go.mod` shared with kubernetes
-- Enforce minimum Go version that is supported by kubernetes
-- Optionally ignore dependencies for more flexibility (eg: test frameworks)
-- Auto-detect upstream k8s version
-- Dynamically adjust renovate config to prevent PRs updating dependencies to
+- 🔒 Enforce versions of dependencies in `go.mod` shared with kubernetes
+- 🐹 Enforce minimum Go version that is supported by kubernetes
+- ⚙️  Optionally ignore dependencies for more flexibility (eg: test frameworks)
+- 🔍 Auto-detect upstream k8s version
+- 🤖 Dynamically adjust renovate config to prevent PRs updating dependencies to
   unsupported versions
-- Github Action to easily enforce in your CI
+- 🚀 Github Action to easily enforce in your CI
 
 ## Github Action
 
