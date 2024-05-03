@@ -336,8 +336,6 @@ func checkCmd() cli.Command {
 				return err
 			}
 
-			hasError := false
-
 			if local.GoVersion != k8s.GoVersion {
 				log.Printf("Go version is different, local=%s vs upstream=%s\n", local.GoVersion, k8s.GoVersion)
 			}
@@ -350,6 +348,13 @@ func checkCmd() cli.Command {
 				}
 			}
 
+			type modDiff struct {
+				Path            string
+				LocalVersion    string
+				UpstreamVersion string
+			}
+
+			differences := []modDiff{}
 			for kpkg, kver := range k8s.Deps {
 				lver, exists := local.Deps[kpkg]
 				if !exists {
@@ -362,12 +367,22 @@ func checkCmd() cli.Command {
 				}
 
 				if kver != lver {
-					log.Printf("Package %q is different, local=%s vs upstream=%s\n", kpkg, lver, kver)
-					hasError = true
+					differences = append(differences, modDiff{
+						Path:            kpkg,
+						LocalVersion:    lver,
+						UpstreamVersion: kver,
+					})
 				}
 			}
 
-			if hasError {
+			sort.Slice(differences, func(i, j int) bool {
+				return differences[i].Path < differences[j].Path
+			})
+
+			if len(differences) > 0 {
+				for _, diff := range differences {
+					log.Printf("Package %q is different, local=%s vs upstream=%s\n", diff.Path, diff.LocalVersion, diff.UpstreamVersion)
+				}
 				return fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
 			}
 
