@@ -192,13 +192,13 @@ func getK8sVersion(version string, info goModInfo) (string, error) {
 	}
 
 	// One of these should be in the go.mod
-	packages := []string{
+	modules := []string{
 		"k8s.io/api",
 		"k8s.io/apimachinery",
 		"k8s.io/client-go",
 	}
-	for _, pkg := range packages {
-		if k8sVersion, exists := info.Deps[pkg]; exists {
+	for _, module := range modules {
+		if k8sVersion, exists := info.Deps[module]; exists {
 			// Convert from v0.X.Y to v1.X.Y because libraries are
 			// v0 based
 			return strings.Replace(k8sVersion, "v0", "v1", 1), nil
@@ -240,15 +240,15 @@ func updateRenovate() cli.Command {
 				PackageRules: make([]packageRule, 0),
 			}
 
-			for pkg, ver := range k8s.Deps {
-				_, isIgnored := ignored[pkg]
+			for module, ver := range k8s.Deps {
+				_, isIgnored := ignored[module]
 				if isIgnored {
 					continue
 				}
 
-				log.Printf(`Pinning %q to %q\n`, pkg, ver)
+				log.Printf(`Pinning %q to %q\n`, module, ver)
 				rule := packageRule{
-					MatchPackageNames: []string{pkg},
+					MatchPackageNames: []string{module},
 					AllowedVersions:   ver,
 				}
 				config.PackageRules = append(config.PackageRules, rule)
@@ -355,20 +355,20 @@ func checkCmd() cli.Command {
 			}
 
 			differences := []modDiff{}
-			for kpkg, kver := range k8s.Deps {
-				lver, exists := local.Deps[kpkg]
+			for module, kver := range k8s.Deps {
+				lver, exists := local.Deps[module]
 				if !exists {
 					continue
 				}
 
-				_, isIgnored := ignored[kpkg]
+				_, isIgnored := ignored[module]
 				if isIgnored {
 					continue
 				}
 
 				if kver != lver {
 					differences = append(differences, modDiff{
-						Path:            kpkg,
+						Path:            module,
 						LocalVersion:    lver,
 						UpstreamVersion: kver,
 					})
@@ -381,7 +381,7 @@ func checkCmd() cli.Command {
 
 			if len(differences) > 0 {
 				for _, diff := range differences {
-					log.Printf("Package %q is different, local=%s vs upstream=%s\n", diff.Path, diff.LocalVersion, diff.UpstreamVersion)
+					log.Printf("Module %q is different, local=%s vs upstream=%s\n", diff.Path, diff.LocalVersion, diff.UpstreamVersion)
 				}
 				return fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
 			}
