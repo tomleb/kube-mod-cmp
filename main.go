@@ -352,6 +352,8 @@ func checkCmd() cli.Command {
 					if err = runGo(ctx.Args().First(), "mod", "edit", fmt.Sprintf("-go=%s", k8s.GoVersion)); err != nil {
 						return fmt.Errorf("fixing Go version: %w", err)
 					}
+				} else {
+					return fmt.Errorf("wrong Go version: %w", err)
 				}
 			}
 
