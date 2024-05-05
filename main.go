@@ -58,6 +58,16 @@ func parseIgnoreFile(path string, ignored map[string]struct{}) error {
 	return nil
 }
 
+func runGo(dir string, args ...string) error {
+	cmd := exec.Command("go", args...)
+	cmd.Dir = dir
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func localDependencies(dir string) (goModInfo, error) {
 	info := goModInfo{
 		Deps: dependencies{},
@@ -338,6 +348,11 @@ func checkCmd() cli.Command {
 
 			if local.GoVersion != k8s.GoVersion {
 				log.Printf("Go version is different, local=%s vs upstream=%s\n", local.GoVersion, k8s.GoVersion)
+				if ctx.Bool("fix") {
+					if err = runGo(ctx.Args().First(), "mod", "edit", fmt.Sprintf("-go=%s", k8s.GoVersion)); err != nil {
+						return fmt.Errorf("fixing Go version: %w", err)
+					}
+				}
 			}
 
 			ignored := make(map[string]struct{})
@@ -382,8 +397,19 @@ func checkCmd() cli.Command {
 			if len(differences) > 0 {
 				for _, diff := range differences {
 					log.Printf("Module %q is different, local=%s vs upstream=%s\n", diff.Path, diff.LocalVersion, diff.UpstreamVersion)
+					if ctx.Bool("fix") {
+						if err = runGo(ctx.Args().First(), "mod", "edit", fmt.Sprintf("-require=%s@%s", diff.Path, diff.UpstreamVersion)); err != nil {
+							return fmt.Errorf("pinning Go module %s@%s: %w", diff.Path, k8s.GoVersion, err)
+						}
+					}
 				}
-				return fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
+				if ctx.Bool("fix") {
+					if err = runGo(ctx.Args().First(), "mod", "tidy"); err != nil {
+						return fmt.Errorf("go mod tidy: %w", err)
+					}
+				} else {
+					return fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
+				}
 			}
 
 			return nil
@@ -393,6 +419,10 @@ func checkCmd() cli.Command {
 				Name:  "k8s-version",
 				Usage: "The k8s version to look for",
 				Value: "auto",
+			},
+			cli.BoolFlag{
+				Name:  "fix",
+				Usage: "Automatically apply go mod edit commands to fix differences",
 			},
 			cli.StringFlag{
 				Name:  "ignore-file",

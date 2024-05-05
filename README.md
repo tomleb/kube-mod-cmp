@@ -25,6 +25,7 @@ $ kubemodcmp check path/to/repo
 - 🤖 Dynamically adjust renovate config to prevent PRs updating dependencies to
   unsupported versions
 - 🚀 Github Action to easily enforce in your CI
+- 🔨 Auto-fix differences with the `--fix` flag
 
 ## Github Action
 
