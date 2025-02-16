@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -335,7 +336,7 @@ func checkCmd() cli.Command {
 		Action: func(ctx *cli.Context) error {
 			local, err := localDependencies(ctx.Args().First())
 			if err != nil {
-				return err
+				return fmt.Errorf("local deps: %w", err)
 			}
 			k8sVersion, err := getK8sVersion(ctx.String("k8s-version"), local)
 			if err != nil {
@@ -346,6 +347,9 @@ func checkCmd() cli.Command {
 				return err
 			}
 
+			var goVersionErr error
+			var goDepsErr error
+
 			if local.GoVersion != k8s.GoVersion {
 				log.Printf("Go version is different, local=%s vs upstream=%s\n", local.GoVersion, k8s.GoVersion)
 				if ctx.Bool("fix") {
@@ -353,7 +357,7 @@ func checkCmd() cli.Command {
 						return fmt.Errorf("fixing Go version: %w", err)
 					}
 				} else {
-					return fmt.Errorf("wrong Go version: %w", err)
+					goVersionErr = fmt.Errorf("wrong Go version: %s", k8s.GoVersion)
 				}
 			}
 
@@ -410,11 +414,11 @@ func checkCmd() cli.Command {
 						return fmt.Errorf("go mod tidy: %w", err)
 					}
 				} else {
-					return fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
+					goDepsErr = fmt.Errorf("some dependencies are not pinned to k8s upstream's version")
 				}
 			}
 
-			return nil
+			return errors.Join(goVersionErr, goDepsErr)
 		},
 		Flags: []cli.Flag{
 			cli.StringFlag{
